@@ -42,7 +42,7 @@ describe.only("ERC721C", function () {
 
   const deployContracts = async (verbose = false) => {
     [deployer, user1, user2, user3] = await ethers.getSigners();
-    nft = await deploy('ERC721C');
+    nft = await deploy('ERC721C', "TestNFT", "TEST");
   }
 
   // also called for nested

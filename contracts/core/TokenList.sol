@@ -15,7 +15,7 @@ abstract contract TokenList {
   mapping (uint256 => OwnerNode) public _owners; // slot #0
 
   // MAX length / supply is capped at 2^16 = 65536
-  uint16 public length = 0;
+  uint16 internal _length = 0;
 
   constructor() {
     // TODO for testing only
@@ -31,22 +31,22 @@ abstract contract TokenList {
     // if the owner minted previously, set a pointer
     // on last element of last batch to first on new batch
     // this will allow forward iteration: when end of batch is reached jump to next
-    if(getFirstOwned(to) < length) {
-      _owners[getLastOwned(to)].next = length + 1;
+    if(getFirstOwned(to) < _length) {
+      _owners[getLastOwned(to)].next = _length + 1;
     }
 
-    length += quantity;
+    _length += quantity;
 
     // terminate sublist with owner info
-    _owners[length].owner = to;
+    _owners[_length].owner = to;
 
   }
 
   // find owner of token ID in: O(max(balance))
   // this can be optimized further by inserting partition node which just include owner and next: tokenId +1 
   // in the middle of a large batch
-  function ownerOf(uint256 tokenId) public view virtual returns (address) {
-    require(tokenId > 0 && tokenId <= length, "Invalid Token ID");
+  function _ownerOf(uint256 tokenId) internal view virtual returns (address) {
+    require(tokenId > 0 && tokenId <= _length, "Invalid Token ID");
     while(
       // owner is stored at last pos of a batch
       // we need to iterate over all their tokens until we reach the last of batch
@@ -62,7 +62,7 @@ abstract contract TokenList {
     tokens = new uint16[](max);
     uint16 current = start;
     uint i = 0;
-    // console.log("get owned tokens: %s", owner);
+
     while(i < max && current <= end) {
       // push token ID to owned
       tokens[i++] = current; 
@@ -140,7 +140,7 @@ abstract contract TokenList {
     // we need to check if `to` has a node with .next pointer higher 
     // than tokenId and update pointers for the nodes
     uint16 current = getFirstOwned(to);
-    while(current < length) {
+    while(current < _length) {
       // we found the end of one batch
       // note: the list is sparse: next pointers might not be set
       // for all nodes within a batch
