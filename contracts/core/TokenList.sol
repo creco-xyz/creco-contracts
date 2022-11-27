@@ -22,6 +22,26 @@ abstract contract TokenList {
     _owners[0].owner = address(0xdEad000000000000000000000000000000000000);
   }
 
+  // implemented by derived
+  function getFirstOwned(address owner) virtual internal view returns(uint16);
+  function getLastOwned(address owner) virtual internal view returns(uint16);
+
+  function _append(address to, uint16 quantity) internal {
+
+    // if the owner minted previously, set a pointer
+    // on last element of last batch to first on new batch
+    // this will allow forward iteration: when end of batch is reached jump to next
+    if(getFirstOwned(to) < length) {
+      _owners[getLastOwned(to)].next = length + 1;
+    }
+
+    length += quantity;
+
+    // terminate sublist with owner info
+    _owners[length].owner = to;
+
+  }
+
   // find owner of token ID in: O(max(balance))
   // this can be optimized further by inserting partition node which just include owner and next: tokenId +1 
   // in the middle of a large batch
@@ -60,6 +80,90 @@ abstract contract TokenList {
       }
     }
     return tokens;
+  }
+
+  function _transferOwnership(address from, address to, uint16 tokenId) internal {
+    // ##### UPDATE OWNERSHIP AND POINTERS FOR PREVIOUS OWNER (from) ####
+    if (tokenId == 1) {
+      // we set the new owner and are done
+      _owners[tokenId].owner = to;
+    } 
+    // in the following block tokenId - 1 is safe
+    else {
+      // if owner is empty the token ID lies within a batch mint
+      if (_owners[tokenId].owner == address(0)) {
+        // we need to introduce a new termination node one node before tokenId
+        // from = previous owner. no don't need to sequentially search for it (checked with ownerOf)
+        // terminate the batch before new owner to avoid that 
+        // they become owner of ALL tokens in batch
+        _owners[tokenId - 1].owner = from;
+        // no need to check bounds: if node is empty there is at least a termination node
+        // create "bridge" over inserted token to skip it
+        _owners[tokenId - 1].next  = tokenId + 1;
+      }
+      // slot where we write is not empty: single mint or batch termination node
+      else {
+        // we are about to overwite a termination node.
+        // move the temrination node one place forward
+        if (_owners[tokenId - 1].owner == address(0)) {
+          // copy node to new spot
+          _owners[tokenId - 1].owner = _owners[tokenId].owner;
+          _owners[tokenId - 1].next  = _owners[tokenId].next;
+        }
+      }
+      // now set the new owner
+      _owners[tokenId].owner = to;
+    }
+
+    // ##### UPDATE FIRST and LAST values on accounts ####
+    if (getFirstOwned(to) > tokenId) {
+      // => tokenId becomes new first
+      _owners[tokenId].next = getFirstOwned(to);
+      // toAcc.first = tokenId;
+      return;
+    } 
+
+    if (getLastOwned(to) < tokenId) {
+      // => tokenId becomes new last
+      _owners[getLastOwned(to)].next = tokenId;
+      return;
+    } 
+
+    // ==> new id is in between first and last:
+    // toAcc.first < tokenId && toAcc.last > tokenId
+
+    // ##### UPDATE POINTERS FOR NEW OWNER (to) ####
+    // if account owns ID higher than tokenId
+    // we need to check that the pointer order stays maintained
+    // and the new token is not skipped in list
+
+    // we need to check if `to` has a node with .next pointer higher 
+    // than tokenId and update pointers for the nodes
+    uint16 current = getFirstOwned(to);
+    while(current < length) {
+      // we found the end of one batch
+      // note: the list is sparse: next pointers might not be set
+      // for all nodes within a batch
+      if (_owners[current].owner == to) {
+        // if there is a pointer continue at pos
+        if (_owners[current].next != 0) {
+
+          if (_owners[current].next > tokenId) {
+            // we found a next-pointer larger than tokenId
+            // to avoid the new node being skipped we update both pointers
+            _owners[tokenId].next = _owners[current].next;
+            _owners[current].next = tokenId;
+            break; // done
+          }
+
+          current = _owners[current].next;
+          continue;
+        }
+        // else done
+      } else {
+        current++;
+      }
+    }
   }
 
 }
